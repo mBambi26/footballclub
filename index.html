@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>備品ルーレット</title>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -110,6 +113,23 @@ header .tagline {
   background: var(--primary-dark);
   border-color: var(--primary-dark);
 }
+
+/* Sync status */
+.sync-bar {
+  background: var(--surface);
+  border-bottom: 1.5px solid var(--line);
+  padding: 0.5rem clamp(1rem, 4vw, 2rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.sync-bar.connected { color: var(--success); }
+.sync-bar.error { color: var(--danger); }
 
 .container {
   max-width: 720px;
@@ -948,6 +968,33 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
   border-bottom: none;
 }
 
+.receipt-attendance-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 0.4rem 0;
+  border-bottom: 1px dotted var(--line);
+  font-size: 0.92rem;
+  gap: 0.75rem;
+}
+
+.receipt-attendance-row:last-child {
+  border-bottom: none;
+}
+
+.receipt-attendance-label {
+  flex-shrink: 0;
+  min-width: 100px;
+  font-weight: 600;
+  padding-top: 0.05rem;
+}
+
+.receipt-attendance-names {
+  flex: 1;
+  text-align: left;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
 .receipt-footer {
   text-align: center;
   margin-top: 1.2rem;
@@ -1059,12 +1106,11 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
 }
 
 @media print {
-  .no-print, .reveal-overlay { display: none !important; }
+  .no-print, .reveal-overlay, .sync-bar { display: none !important; }
   body { background: #fff; }
   .card, .result-card { border: 1px solid #bbb; }
 }
 
-/* Password change section */
 .password-section {
   margin-top: 1.2rem;
   padding-top: 1.2rem;
@@ -1091,7 +1137,6 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
 .password-msg.ok { color: var(--success); }
 .password-msg.err { color: var(--danger); }
 
-/* Grade selection in forms */
 .grade-select-label {
   font-size: 0.88rem;
   color: var(--muted);
@@ -1160,7 +1205,6 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
 .session-grade-banner.高二 { background: var(--grade2); }
 .session-grade-banner.高三 { background: var(--grade3); }
 
-/* Settings grade tabs */
 .settings-grade-tabs {
   display: flex;
   gap: 0.4rem;
@@ -1204,6 +1248,25 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
   border-color: var(--grade3);
   color: #fff;
 }
+
+/* Firebase section in settings */
+.firebase-section {
+  margin-top: 1.2rem;
+  padding-top: 1.2rem;
+  border-top: 1.5px solid var(--line);
+}
+
+.firebase-section h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.firebase-section p {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
 </style>
 </head>
 <body>
@@ -1222,6 +1285,12 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
     <button class="header-btn" id="settingsBtn" onclick="openSettings()">⚙️ 設定</button>
   </div>
 </header>
+
+<!-- Sync status bar -->
+<div class="sync-bar" id="syncBar">
+  <span id="syncIcon">⏳</span>
+  <span id="syncText">データを読み込み中...</span>
+</div>
 
 <div class="container">
 
@@ -1266,7 +1335,7 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
           <label class="toggle-switch">
             <input type="checkbox" id="lateRuleToggle">
             <span class="toggle-slider"></span>
-            <span>遅刻者優先ルール：遅刻した人に備品を優先的割り当てる</span>
+            <span>遅刻者優先ルール：遅刻した人に備品を優先的に割り当てる</span>
           </label>
         </div>
         <div class="actions">
@@ -1287,7 +1356,7 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
         <div id="equipList" class="tag-list"><span class="empty">まだ備品が追加されていません。</span></div>
         <div class="actions">
           <button class="btn btn-ghost" onclick="goToStep0()">← 戻る</button>
-          <button class="btn btn-accent" onclick="goToStep2()">次へ：出席確認 →</button>
+          <button class="btn btn-accent" onclick="goToStep2()">次へ：出席確 →</button>
         </div>
       </div>
     </div>
@@ -1398,7 +1467,7 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
       <label class="toggle-switch" style="margin-bottom:0.5rem;">
         <input type="checkbox" id="defaultLateRuleToggle">
         <span class="toggle-slider"></span>
-        <span>遅刻者優先ルールをデフォルトでONにする</span>
+        <span>遅刻者優先ルルをデフォルトでONにする</span>
       </label>
 
       <!-- Password change -->
@@ -1416,6 +1485,12 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
         </div>
         <button class="btn btn-primary" style="width:100%;" onclick="changePassword()">パスワードを変更</button>
         <div class="password-msg" id="passwordMsg"></div>
+      </div>
+
+      <!-- Firebase status only (no config UI) -->
+      <div class="firebase-section" id="firebaseSection">
+        <h3>☁️ クラウド同期</h3>
+        <p id="firebaseStatusText">状態を確認中...</p>
       </div>
     </div>
   </div>
@@ -1453,7 +1528,7 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
         <div id="attendanceHistoryList"></div>
       </div>
       <div id="historyEquipmentView" class="hidden">
-        <button class="btn btn-ghost btn-sm history-back-btn" onclick="backToHistoryChoice()">← 記録択に戻る</button>
+        <button class="btn btn-ghost btn-sm history-back-btn" onclick="backToHistoryChoice()">← 記録選択に戻る</button>
         <div class="history-toolbar">
           <span style="color:var(--muted);font-size:0.88rem;">全 <span id="equipmentHistoryCount">0</span> 件</span>
           <button class="btn btn-danger btn-sm admin-only" onclick="clearAllHistory()">🗑️ 全記録を削除</button>
@@ -1480,10 +1555,33 @@ input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus
 <canvas id="confettiCanvas" class="hidden"></canvas>
 
 <script>
+// ===================== FIREBASE CONFIG (PASTE HERE) =====================
+// Replace null with your Firebase config from Step 1.
+// It should look like:
+// const FIREBASE_CONFIG = {
+//   apiKey: "AIzaSy...",
+//   authDomain: "hiroofootball.firebaseapp.com",
+//   projectId: "hiroofootball",
+//   storageBucket: "hiroofootball.appspot.com",
+//   messagingSenderId: "123...",
+//   appId: "1:123..."
+// };
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAAUOpo_Tcyae7e3QTVRZ7goiBg1jSWP1s",
+  authDomain: "hiroofootball.firebaseapp.com",
+  projectId: "hiroofootball",
+  storageBucket: "hiroofootball.firebasestorage.app",
+  messagingSenderId: "388779108613",
+  appId: "1:388779108613:web:22f496610a9b147b0aaf6c",
+  measurementId: "G-TWXKDPFGPQ"
+};
+ // PASTE FIREBASE CONFIG HERE
+
 // ===================== CONFIG =====================
 const DEFAULT_PASSWORD = 'daddykawahara6767';
 const MASTER_PASSWORD = 'helloworld0526';
 const GRADES = ['高一', '高二', '高三'];
+const FIREBASE_DOC_PATH = 'er-data/main';
 
 // ===================== STATE =====================
 let sessionGrade = '高一';
@@ -1494,8 +1592,10 @@ let defaultLateRule = false;
 let currentStep = 0;
 let pendingResult = null;
 let history = [];
+let db = null;
+let unsubSnapshot = null;
+let isOnline = false;
 
-// Per-grade data
 let gradeData = {};
 GRADES.forEach(g => {
   gradeData[g] = {
@@ -1507,12 +1607,12 @@ GRADES.forEach(g => {
   };
 });
 
-// ===================== MIGRATION & LOAD =====================
-(function loadData() {
+// ===================== LOCALSTORAGE (fallback + auth) =====================
+function loadLocal() {
   try {
-    const storedV2 = localStorage.getItem('er_v2');
-    if (storedV2) {
-      const parsed = JSON.parse(storedV2);
+    const stored = localStorage.getItem('er_v2');
+    if (stored) {
+      const parsed = JSON.parse(stored);
       if (parsed.sessionGrade) sessionGrade = parsed.sessionGrade;
       if (parsed.settingsGrade) settingsGrade = parsed.settingsGrade;
       if (parsed.isUnlocked !== undefined) isUnlocked = parsed.isUnlocked;
@@ -1520,42 +1620,18 @@ GRADES.forEach(g => {
       if (parsed.defaultLateRule !== undefined) defaultLateRule = parsed.defaultLateRule;
       if (parsed.history) history = parsed.history;
       if (parsed.gradeData) gradeData = parsed.gradeData;
-      return;
-    }
-
-    // Migrate from old v2 (currentGrade based)
-    const oldV2 = localStorage.getItem('er_v2');
-    if (oldV2) {
-      const parsed = JSON.parse(oldV2);
-      if (parsed.currentGrade) sessionGrade = parsed.currentGrade;
-      if (parsed.gradeData) gradeData = parsed.gradeData;
-      if (parsed.history) history = parsed.history;
-      if (parsed.defaultLateRule !== undefined) defaultLateRule = parsed.defaultLateRule;
-      if (parsed.isUnlocked !== undefined) isUnlocked = parsed.isUnlocked;
-      if (parsed.customPassword !== undefined) customPassword = parsed.customPassword;
-      save();
-      return;
     }
   } catch (e) {
-    console.error('Failed to load data', e);
+    console.error('Failed to load local data', e);
   }
-})();
-
-function save() {
-  const data = {
-    sessionGrade,
-    settingsGrade,
-    isUnlocked,
-    customPassword,
-    defaultLateRule,
-    history,
-    gradeData
-  };
-  localStorage.setItem('er_v2', JSON.stringify(data));
 }
 
-function getGradeData(grade) {
-  return gradeData[grade];
+function saveLocal() {
+  const data = {
+    sessionGrade, settingsGrade, isUnlocked, customPassword,
+    defaultLateRule, history, gradeData
+  };
+  localStorage.setItem('er_v2', JSON.stringify(data));
 }
 
 function getCurrentPassword() {
@@ -1568,31 +1644,132 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// ===================== SESSION GRADE =====================
+// ===================== FIREBASE =====================
+function initFirebase() {
+  if (!FIREBASE_CONFIG) return false;
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    return true;
+  } catch (e) {
+    console.error('Firebase init failed', e);
+    return false;
+  }
+}
+
+function updateSyncBar(status, text) {
+  const bar = document.getElementById('syncBar');
+  const icon = document.getElementById('syncIcon');
+  const txt = document.getElementById('syncText');
+  txt.textContent = text;
+  bar.classList.remove('connected', 'error');
+  if (status === 'connected') {
+    bar.classList.add('connected');
+    icon.textContent = '☁️';
+  } else if (status === 'error') {
+    bar.classList.add('error');
+    icon.textContent = '⚠️';
+  } else {
+    icon.textContent = '⏳';
+  }
+}
+
+async function saveToFirebase() {
+  saveLocal();
+  if (!db || !isOnline) return;
+  try {
+    const payload = {
+      gradeData,
+      history,
+      defaultLateRule,
+      customPassword: customPassword || null,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await db.doc(FIREBASE_DOC_PATH).set(payload);
+    updateSyncBar('connected', 'クラウド同期中 ☁️');
+  } catch (e) {
+    console.error('Firebase save failed', e);
+    updateSyncBar('error', '同期エラー — ローカルに保存中');
+  }
+}
+
+function listenToFirebase() {
+  if (!db) return;
+  if (unsubSnapshot) unsubSnapshot();
+
+  updateSyncBar('loading', 'クラウドに接続中...');
+
+  unsubSnapshot = db.doc(FIREBASE_DOC_PATH).onSnapshot(
+    (doc) => {
+      isOnline = true;
+      if (doc.exists) {
+        const data = doc.data();
+        if (data.gradeData) gradeData = data.gradeData;
+        if (data.history) history = data.history;
+        if (data.defaultLateRule !== undefined) defaultLateRule = data.defaultLateRule;
+        if (data.customPassword !== undefined) customPassword = data.customPassword;
+        saveLocal();
+        refreshUI();
+      } else {
+        saveToFirebase();
+      }
+      updateSyncBar('connected', 'クラウド同期中 ☁️');
+    },
+    (err) => {
+      console.error('Firebase listener error', err);
+      isOnline = false;
+      updateSyncBar('error', 'オフラインモード — ローカルデータを使用');
+    }
+  );
+}
+
+function refreshUI() {
+  updateSessionGradeUI();
+  updateSettingsGradeUI();
+  updateAuthUI();
+  renderEquip();
+  renderAttendance();
+  renderMemberList();
+  updateFirebaseStatusInSettings();
+}
+
+function updateFirebaseStatusInSettings() {
+  const statusText = document.getElementById('firebaseStatusText');
+  if (!statusText) return;
+  if (isOnline && db) {
+    statusText.innerHTML = '<span style="color:var(--success);font-weight:700;">☁️ 接続中</span> — MacBook、iPhoneなど全端末でデータが自動同期されます。';
+  } else if (FIREBASE_CONFIG) {
+    statusText.innerHTML = '<span style="color:var(--warning);font-weight:700;">⚠️ 未接続</span> — インターネット接続を確認してください。';
+  } else {
+    statusText.innerHTML = '<span style="color:var(--muted);font-weight:700;">📴 ローカルモード</span> — データはこの端末のみに保存されます。クラウド同期を有効にするには、ファイル内の <code>FIREBASE_CONFIG</code> に設定情報を貼り付けてください。';
+  }
+}
+
+// ===================== GRADE SWITCHING =====================
 function selectSessionGrade(grade) {
   if (!GRADES.includes(grade)) return;
   sessionGrade = grade;
-  save();
+  saveToFirebase();
   updateSessionGradeUI();
 }
 
 function updateSessionGradeUI() {
-  // Step 0 buttons
   document.querySelectorAll('#step0 .grade-select-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.grade === sessionGrade);
   });
-  // Banners in step 1, 2
   document.querySelectorAll('.session-grade-banner').forEach(banner => {
     banner.textContent = sessionGrade;
     banner.className = 'session-grade-banner ' + sessionGrade;
   });
 }
 
-// ===================== SETTINGS GRADE =====================
 function selectSettingsGrade(grade) {
   if (!GRADES.includes(grade)) return;
   settingsGrade = grade;
-  save();
+  saveToFirebase();
   updateSettingsGradeUI();
   renderMemberList();
 }
@@ -1659,7 +1836,7 @@ function doAuthLogin() {
 
   if (val === getCurrentPassword()) {
     isUnlocked = true;
-    save();
+    saveToFirebase();
     updateAuthUI();
     closeAuthModal();
     errorEl.textContent = '';
@@ -1679,13 +1856,13 @@ function doLockLogin() {
 
   if (val === getCurrentPassword()) {
     isUnlocked = true;
-    save();
+    saveToFirebase();
     updateAuthUI();
     errorEl.textContent = '';
     input.value = '';
     showStep(0);
   } else {
-    errorEl.textContent = 'スワードが違います。';
+    errorEl.textContent = 'パスワードが違います。';
     input.value = '';
     input.focus();
   }
@@ -1693,7 +1870,7 @@ function doLockLogin() {
 
 function doLogout() {
   isUnlocked = false;
-  save();
+  saveToFirebase();
   updateAuthUI();
   closeAuthModal();
 }
@@ -1726,7 +1903,7 @@ function changePassword() {
   }
 
   if (!newVal) {
-    msgEl.textContent = '新しいパスワードを入力してくさい。';
+    msgEl.textContent = '新しいパスワードを入力してください。';
     msgEl.className = 'password-msg err';
     return;
   }
@@ -1738,7 +1915,7 @@ function changePassword() {
   }
 
   customPassword = newVal;
-  save();
+  saveToFirebase();
   msgEl.textContent = 'パスワードを変更しました！';
   msgEl.className = 'password-msg ok';
 
@@ -1771,8 +1948,8 @@ function goToStep2() { if(!requireAuth())return; showStep(2); renderAttendance()
 function renderEquip() {
   const list = document.getElementById('equipList');
   if (!list) return;
-  const data = getGradeData(sessionGrade);
-  if (data.equipment.length === 0) {
+  const data = gradeData[sessionGrade];
+  if (!data || data.equipment.length === 0) {
     list.innerHTML = '<span class="empty">まだ備品が追加されていません。</span>';
   } else {
     list.innerHTML = data.equipment.map((item, i) =>
@@ -1787,21 +1964,21 @@ function addEquip() {
   const val = input.value.trim();
   if (!val) return;
   const items = val.split(/[,、]/).map(s => s.trim()).filter(s => s);
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
   items.forEach(item => {
     if (!data.equipment.some(e => e.toLowerCase() === item.toLowerCase())) {
       data.equipment.push(item);
     }
   });
   input.value = '';
-  save();
+  saveToFirebase();
   renderEquip();
 }
 
 function removeEquip(i) {
   if (!requireAuth()) return;
-  getGradeData(sessionGrade).equipment.splice(i, 1);
-  save();
+  gradeData[sessionGrade].equipment.splice(i, 1);
+  saveToFirebase();
   renderEquip();
 }
 
@@ -1809,12 +1986,12 @@ function removeEquip(i) {
 function renderAttendance() {
   const container = document.getElementById('attendanceContainer');
   if (!container) return;
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
 
-  if (data.members.length === 0) {
+  if (!data || data.members.length === 0) {
     container.innerHTML = `
       <div class="no-members">
-        <p>メンバーが登録されていません。</p>
+        <p>メンバーが登されていません。</p>
         <p>右上の <a onclick="openSettings()">「⚙️ 設定」</a> から追加してください。</p>
       </div>`;
     return;
@@ -1828,7 +2005,7 @@ function renderAttendance() {
   Object.keys(data.attendance).forEach(m => { if (!data.members.includes(m)) delete data.attendance[m]; });
   Object.keys(data.exempt).forEach(m => { if (!data.members.includes(m)) delete data.exempt[m]; });
   Object.keys(data.late).forEach(m => { if (!data.members.includes(m)) delete data.late[m]; });
-  save();
+  saveToFirebase();
 
   let html = '<div class="attendance-list">';
   data.members.forEach(m => {
@@ -1867,29 +2044,29 @@ function renderAttendance() {
 
 function togglePresent(name) {
   if (!requireAuth()) return;
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
   data.attendance[name] = !data.attendance[name];
   if (!data.attendance[name]) {
     data.late[name] = false;
     data.exempt[name] = false;
   }
-  save();
+  saveToFirebase();
   renderAttendance();
 }
 
 function toggleLate(name) {
   if (!requireAuth()) return;
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
   data.late[name] = !data.late[name];
-  save();
+  saveToFirebase();
   renderAttendance();
 }
 
 function toggleExempt(name) {
   if (!requireAuth()) return;
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
   data.exempt[name] = !data.exempt[name];
-  save();
+  saveToFirebase();
   renderAttendance();
 }
 
@@ -1912,7 +2089,7 @@ function startRoulette() {
 
   const dateVal = document.getElementById('sessionDate').value;
   const placeVal = document.getElementById('sessionPlace').value.trim();
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
 
   if (!dateVal) { warn.textContent = '日付を入力してください。'; warn.style.display = 'block'; return; }
   if (!placeVal) { warn.textContent = '場所を入力してください。'; warn.style.display = 'block'; return; }
@@ -1940,7 +2117,7 @@ function startRoulette() {
 }
 
 function performDistribution(dateVal, placeVal, lateRuleOn) {
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
   const eligible = data.members.filter(m => data.attendance[m] && !data.exempt[m]);
   const lateMembers = eligible.filter(m => data.late[m]);
   const normalMembers = eligible.filter(m => !data.late[m]);
@@ -1989,7 +2166,7 @@ function performDistribution(dateVal, placeVal, lateRuleOn) {
   };
   history.unshift(record);
   if (history.length > 100) history = history.slice(0, 100);
-  save();
+  saveToFirebase();
 
   pendingResult = { date: dateVal, place: placeVal, lateRule: lateRuleOn, assignments, unassigned };
   showDramaticReveal();
@@ -2085,7 +2262,7 @@ function doReveal() {
 
 function resetSession() {
   if (!requireAuth()) return;
-  const data = getGradeData(sessionGrade);
+  const data = gradeData[sessionGrade];
   data.equipment = [];
   data.members.forEach(m => {
     data.attendance[m] = true;
@@ -2094,7 +2271,7 @@ function resetSession() {
   });
   document.getElementById('sessionPlace').value = '';
   document.getElementById('lateRuleToggle').checked = defaultLateRule;
-  save();
+  saveToFirebase();
   renderEquip();
   showStep(0);
 }
@@ -2104,6 +2281,7 @@ function openSettings() {
   if (!requireAuth()) return;
   updateSettingsGradeUI();
   renderMemberList();
+  updateFirebaseStatusInSettings();
   document.getElementById('passwordMsg').textContent = '';
   document.getElementById('passwordMsg').className = 'password-msg';
   document.getElementById('settingsOverlay').classList.add('active');
@@ -2117,8 +2295,8 @@ function closeSettings() {
 function renderMemberList() {
   const list = document.getElementById('memberList');
   if (!list) return;
-  const data = getGradeData(settingsGrade);
-  if (data.members.length === 0) {
+  const data = gradeData[settingsGrade];
+  if (!data || data.members.length === 0) {
     list.innerHTML = '<p class="empty" style="text-align:center;padding:1rem;">メンバーが登録されていません。</p>';
     return;
   }
@@ -2136,7 +2314,7 @@ function addMember() {
   const val = input.value.trim();
   if (!val) return;
   const names = val.split(/[,、]/).map(s => s.trim()).filter(s => s);
-  const data = getGradeData(settingsGrade);
+  const data = gradeData[settingsGrade];
   names.forEach(name => {
     if (!data.members.some(m => m.toLowerCase() === name.toLowerCase())) {
       data.members.push(name);
@@ -2146,19 +2324,19 @@ function addMember() {
     }
   });
   input.value = '';
-  save();
+  saveToFirebase();
   renderMemberList();
 }
 
 function removeMember(i) {
   if (!requireAuth()) return;
-  const data = getGradeData(settingsGrade);
+  const data = gradeData[settingsGrade];
   const name = data.members[i];
   data.members.splice(i, 1);
   delete data.attendance[name];
   delete data.exempt[name];
   delete data.late[name];
-  save();
+  saveToFirebase();
   renderMemberList();
 }
 
@@ -2166,7 +2344,7 @@ document.getElementById('defaultLateRuleToggle').addEventListener('change', func
   if (!requireAuth()) { this.checked = defaultLateRule; return; }
   defaultLateRule = this.checked;
   document.getElementById('lateRuleToggle').checked = defaultLateRule;
-  save();
+  saveToFirebase();
 });
 
 // ===================== HISTORY =====================
@@ -2320,7 +2498,7 @@ function deleteHistoryItem(i) {
   if (!isUnlocked) { alert('削除にはログインが必要です。'); return; }
   if (!confirm('この記録を削除しますか？')) return;
   history.splice(i, 1);
-  save();
+  saveToFirebase();
   renderAttendanceHistory();
   renderEquipmentHistory();
 }
@@ -2329,7 +2507,7 @@ function clearAllHistory() {
   if (!isUnlocked) { alert('削除にはログインが必要です。'); return; }
   if (!confirm('すべての記録を削除しますか？この操作は元に戻せません。')) return;
   history = [];
-  save();
+  saveToFirebase();
   renderAttendanceHistory();
   renderEquipmentHistory();
 }
@@ -2379,17 +2557,17 @@ function shareHistoryItem(i) {
       </div>
       <div class="receipt-section">
         <div class="receipt-section-title">出席状況</div>
-        <div class="receipt-row">
-          <span style="color:var(--success);">✅ 出席 (${h.present.length}人)</span>
-          <span>${h.present.length ? escapeHtml(h.present.join('、')) : 'なし'}</span>
+        <div class="receipt-attendance-row">
+          <div class="receipt-attendance-label" style="color:var(--success);">✅ 出席 (${h.present.length}人)</div>
+          <div class="receipt-attendance-names">${h.present.length ? escapeHtml(h.present.join('、')) : 'なし'}</div>
         </div>
-        <div class="receipt-row">
-          <span style="color:var(--purple);">⏰ 遅刻 (${h.late.length}人)</span>
-          <span>${h.late.length ? escapeHtml(h.late.join('、')) : 'なし'}</span>
+        <div class="receipt-attendance-row">
+          <div class="receipt-attendance-label" style="color:var(--purple);">⏰ 遅刻 (${h.late.length}人)</div>
+          <div class="receipt-attendance-names">${h.late.length ? escapeHtml(h.late.join('、')) : 'なし'}</div>
         </div>
-        <div class="receipt-row">
-          <span style="color:var(--muted);">❌ 欠席 (${h.absent.length}人)</span>
-          <span>${h.absent.length ? escapeHtml(h.absent.join('、')) : 'なし'}</span>
+        <div class="receipt-attendance-row">
+          <div class="receipt-attendance-label" style="color:var(--muted);">❌ 欠席 (${h.absent.length}人)</div>
+          <div class="receipt-attendance-names">${h.absent.length ? escapeHtml(h.absent.join('、')) : 'なし'}</div>
         </div>
       </div>
       <div class="receipt-section">
@@ -2533,11 +2711,20 @@ document.getElementById('sessionDate').value = today;
 document.getElementById('lateRuleToggle').checked = defaultLateRule;
 document.getElementById('defaultLateRuleToggle').checked = defaultLateRule;
 
+loadLocal();
+
+// Initialize Firebase if config is present
+if (initFirebase()) {
+  listenToFirebase();
+  updateAuthUI();
+  if (isUnlocked) showStep(0);
+} else {
+  updateSyncBar('loading', 'ローカルモード');
+  updateAuthUI();
+}
+
 updateSessionGradeUI();
 updateSettingsGradeUI();
-updateAuthUI();
-renderEquip();
-if (isUnlocked) showStep(0);
 </script>
 </body>
 </html>
